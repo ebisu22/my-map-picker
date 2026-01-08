@@ -1,14 +1,27 @@
-<style>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="球場マップ">
+
+    <title>球場マップ</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
         /* 全画面表示の設定 */
         body { 
             margin: 0; padding: 0; 
             width: 100%; 
             display: flex; flex-direction: column; 
             font-family: sans-serif;
-            
-            /* ここが修正ポイント：ブラウザのバーを計算に入れた「本当の高さ」を指定 */
-            height: 100vh;       /* 古いスマホ用 */
-            height: 100dvh;      /* 新しいスマホ用（アドレスバーを除いた高さ） */
+            /* iPhoneのアドレスバーの伸縮に対応する高さ設定 */
+            height: 100vh;
+            height: 100dvh;
         }
 
         #map { flex-grow: 1; width: 100%; position: relative; }
@@ -33,17 +46,15 @@
             text-align: center; box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
             z-index: 2000;
             display: flex; flex-direction: column; gap: 10px;
-
-            /* ここも修正ポイント：iPhone X/11/12/13... の「下の黒い棒」を避ける */
+            
+            /* 【重要】iPhone XRなどの下のバー（ホームインジケータ）を避ける設定 */
             padding-bottom: calc(15px + env(safe-area-inset-bottom));
         }
         
-        /* 座標表示エリア */
         #coords-display {
             font-family: monospace; font-size: 1.2em; font-weight: bold; color: #333;
             margin-bottom: 5px;
         }
-        /* ボタンのデザイン */
         .btn-group { display: flex; gap: 10px; }
         button {
             font-size: 16px; padding: 12px; border-radius: 8px; border: none; cursor: pointer; color: white; flex: 1;
@@ -51,6 +62,75 @@
         }
         .btn-copy { background-color: #007bff; }
         .btn-gps { background-color: #28a745; flex: 0 0 80px; }
-        
         button:active { transform: translateY(2px); box-shadow: none; }
     </style>
+</head>
+<body>
+
+<div id="map">
+    <div class="crosshair"></div>
+</div>
+
+<div class="controls">
+    <div id="coords-display">読み込み中...</div>
+    <div class="btn-group">
+        <button class="btn-copy" onclick="copyCoords()">📋 座標コピー</button>
+        <button class="btn-gps" onclick="getLocation()">📍現在地</button>
+    </div>
+</div>
+
+<script>
+    // 地図の初期設定
+    var map = L.map('map').setView([35.681236, 139.767125], 15);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    var currentLocMarker = null;
+
+    map.on('move', function() { updateCoordsDisplay(); });
+    map.on('zoom', function() { updateCoordsDisplay(); });
+
+    function updateCoordsDisplay() {
+        var center = map.getCenter();
+        document.getElementById('coords-display').innerText = 
+            center.lat.toFixed(6) + ", " + center.lng.toFixed(6);
+    }
+    updateCoordsDisplay();
+
+    function copyCoords() {
+        var center = map.getCenter();
+        var text = center.lat.toFixed(6) + "," + center.lng.toFixed(6);
+        navigator.clipboard.writeText(text).then(function() {
+            alert("コピーしました！\n" + text);
+        }, function(err) {
+            prompt("このテキストをコピーしてください", text);
+        });
+    }
+
+    function getLocation() {
+        if (!navigator.geolocation) { alert("GPSに対応していません"); return; }
+        var btn = document.querySelector('.btn-gps');
+        var originalText = btn.innerText;
+        btn.innerText = "取得中...";
+
+        navigator.geolocation.getCurrentPosition(function(position) {
+            var lat = position.coords.latitude;
+            var lng = position.coords.longitude;
+            map.setView([lat, lng], 18);
+            
+            if (currentLocMarker) { map.removeLayer(currentLocMarker); }
+            currentLocMarker = L.circleMarker([lat, lng], {
+                color: 'white', fillColor: '#007bff', fillOpacity: 0.8, radius: 8, weight: 2
+            }).addTo(map);
+
+            btn.innerText = originalText;
+        }, function(error) {
+            alert("現在地を取得できませんでした");
+            btn.innerText = originalText;
+        }, { enableHighAccuracy: true });
+    }
+</script>
+
+</body>
+</html>
