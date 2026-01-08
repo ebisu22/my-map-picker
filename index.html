@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>座標ピッカー</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { margin: 0; padding: 0; height: 100vh; width: 100%; display: flex; flex-direction: column; }
+        #map { flex-grow: 1; width: 100%; position: relative; }
+        
+        /* 十字カーソル（画面中央に固定） */
+        .crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            pointer-events: none; /* 地図操作の邪魔をしない */
+            z-index: 1000;
+        }
+        .crosshair::before, .crosshair::after {
+            content: '';
+            position: absolute;
+            background: red;
+        }
+        .crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; } /* 横線 */
+        .crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; } /* 縦線 */
+
+        /* 操作パネル */
+        .controls {
+            padding: 15px;
+            background: #fff;
+            text-align: center;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            z-index: 2000;
+        }
+        button {
+            font-size: 16px;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            border: none;
+            cursor: pointer;
+        }
+        .btn-gps { background-color: #4CAF50; color: white; }
+        .btn-copy { background-color: #008CBA; color: white; width: 100%; font-weight: bold;}
+        #coords-display { margin-bottom: 10px; font-family: monospace; font-size: 1.2em; }
+    </style>
+</head>
+<body>
+
+<div id="map">
+    <div class="crosshair"></div>
+</div>
+
+<div class="controls">
+    <div id="coords-display">マップを動かしてください</div>
+    <button class="btn-copy" onclick="copyCoords()">この場所の座標をコピー</button>
+    <button class="btn-gps" onclick="getLocation()">📍 現在地へ移動</button>
+</div>
+
+<script>
+    // 1. 地図の初期化（初期地は東京駅周辺にしていますが、GPSですぐ移動できます）
+    var map = L.map('map').setView([35.681236, 139.767125], 16);
+
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    // 2. 地図を動かしたときに座標表示を更新
+    map.on('move', function() {
+        updateCoordsDisplay();
+    });
+
+    function updateCoordsDisplay() {
+        var center = map.getCenter();
+        document.getElementById('coords-display').innerText = 
+            center.lat.toFixed(6) + ", " + center.lng.toFixed(6);
+    }
+
+    // 3. 座標をコピーする処理
+    function copyCoords() {
+        var center = map.getCenter();
+        var text = center.lat.toFixed(6) + "," + center.lng.toFixed(6);
+        
+        navigator.clipboard.writeText(text).then(function() {
+            alert("コピーしました！\n" + text);
+        }, function(err) {
+            alert("コピー失敗: " + err);
+        });
+    }
+
+    // 4. 現在地を取得して移動する処理
+    function getLocation() {
+        if (!navigator.geolocation) {
+            alert("このブラウザはGPSに対応していません");
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(function(position) {
+            var lat = position.coords.latitude;
+            var lng = position.coords.longitude;
+            map.setView([lat, lng], 18); // ズームレベル18で移動
+            updateCoordsDisplay();
+            
+            // 現在地に青い丸を表示
+            L.circleMarker([lat, lng], {
+                color: 'blue',
+                radius: 10
+            }).addTo(map);
+
+        }, function() {
+            alert("現在地を取得できませんでした");
+        });
+    }
+</script>
+
+</body>
+</html>
