@@ -12,35 +12,25 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
-    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
-
     <style>
+        /* 全画面表示の設定 */
         body { 
-            margin: 0; padding: 0; width: 100%; 
+            margin: 0; padding: 0; 
+            width: 100%; 
             display: flex; flex-direction: column; 
             font-family: sans-serif;
-            height: 100vh; height: 100dvh;
+            
+            /* iPhoneのアドレスバーの伸縮に対応する高さ設定 */
+            height: 100vh;
+            height: 100dvh;
         }
 
         #map { flex-grow: 1; width: 100%; position: relative; }
         
-        /* --- 【修正箇所】検索ボタンの位置調整 --- */
-        /* 右上のコントロールエリア全体を下にずらす設定 */
-        .leaflet-top.leaflet-right {
-            top: 60px; /* 電池アイコンを避けるために60px下げる */
-        }
-        
-        /* 検索ボタンの見た目微調整 */
-        .leaflet-control-geocoder-icon {
-            width: 40px !important; height: 40px !important; /* 少し押しやすく大きく */
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3) !important;
-        }
-
-        /* 十字カーソル */
+        /* 画面中央の十字カーソル */
         .crosshair {
-            position: absolute; top: 50%; left: 50%;
+            position: absolute;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
             width: 20px; height: 20px;
             pointer-events: none; z-index: 1000;
@@ -51,17 +41,20 @@
         .crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; }
         .crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; }
 
-        /* 操作パネル（下のバー対策済み） */
+        /* 下部の操作パネル */
         .controls {
             padding: 15px; background: #f8f9fa;
             text-align: center; box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
             z-index: 2000;
             display: flex; flex-direction: column; gap: 10px;
+            
+            /* 【重要】iPhone XRなどの下のバー（ホームインジケータ）を避ける設定 */
             padding-bottom: calc(15px + env(safe-area-inset-bottom));
         }
         
         #coords-display {
-            font-family: monospace; font-size: 1.2em; font-weight: bold; color: #333; margin-bottom: 5px;
+            font-family: monospace; font-size: 1.2em; font-weight: bold; color: #333;
+            margin-bottom: 5px;
         }
         .btn-group { display: flex; gap: 10px; }
         button {
@@ -88,30 +81,63 @@
 </div>
 
 <script>
+    // 1. 地図の初期設定
     var map = L.map('map').setView([35.681236, 139.767125], 15);
 
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19, attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    // 検索機能（右上に配置）
-    L.Control.geocoder({
-        defaultMarkGeocode: false,
-        position: 'topright',
-        placeholder: '場所を検索...'
-    })
-    .on('markgeocode', function(e) {
-        var center = e.geocode.center;
-        map.setView(center, 16);
-    })
-    .addTo(map);
+    // --- ここから下は基本機能のみ ---
 
     var currentLocMarker = null;
 
     map.on('move', function() { updateCoordsDisplay(); });
     map.on('zoom', function() { updateCoordsDisplay(); });
 
+    // 初期表示の更新（これが動けば「読み込み中」が消えます）
     function updateCoordsDisplay() {
         var center = map.getCenter();
         document.getElementById('coords-display').innerText = 
-            center.lat.toFixed(6) + ", " + center.
+            center.lat.toFixed(6) + ", " + center.lng.toFixed(6);
+    }
+    updateCoordsDisplay();
+
+    // 座標コピー機能
+    function copyCoords() {
+        var center = map.getCenter();
+        var text = center.lat.toFixed(6) + "," + center.lng.toFixed(6);
+        navigator.clipboard.writeText(text).then(function() {
+            alert("コピーしました！\n" + text);
+        }, function(err) {
+            prompt("このテキストをコピーしてください", text);
+        });
+    }
+
+    // 現在地へ移動機能
+    function getLocation() {
+        if (!navigator.geolocation) { alert("GPSに対応していません"); return; }
+        var btn = document.querySelector('.btn-gps');
+        var originalText = btn.innerText;
+        btn.innerText = "取得中...";
+
+        navigator.geolocation.getCurrentPosition(function(position) {
+            var lat = position.coords.latitude;
+            var lng = position.coords.longitude;
+            map.setView([lat, lng], 18);
+            
+            if (currentLocMarker) { map.removeLayer(currentLocMarker); }
+            currentLocMarker = L.circleMarker([lat, lng], {
+                color: 'white', fillColor: '#007bff', fillOpacity: 0.8, radius: 8, weight: 2
+            }).addTo(map);
+
+            btn.innerText = originalText;
+        }, function(error) {
+            alert("現在地を取得できませんでした");
+            btn.innerText = originalText;
+        }, { enableHighAccuracy: true });
+    }
+</script>
+
+</body>
+</html>
