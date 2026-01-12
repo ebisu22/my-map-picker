@@ -6,16 +6,17 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <title>散歩フォトマップ</title>
     
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="icon" href="icon.png">
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <style>
         body { margin: 0; padding: 0; width: 100%; height: 100dvh; display: flex; flex-direction: column; font-family: sans-serif; }
         
-        /* 地図エリア */
         #map { flex-grow: 1; width: 100%; position: relative; }
 
-        /* 入力フォーム（地図の上に重ねる） */
         .form-panel {
             background: #fff; padding: 15px;
             padding-bottom: calc(15px + env(safe-area-inset-bottom));
@@ -27,20 +28,16 @@
             padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 5px;
         }
         
-        /* 写真選択ボタンをおしゃれに */
-        .file-upload {
-            display: flex; align-items: center; gap: 10px;
-        }
+        .file-upload { display: flex; align-items: center; gap: 10px; }
         input[type="file"] { font-size: 14px; }
 
         .btn-group { display: flex; gap: 10px; }
         button {
             padding: 12px; font-size: 16px; border: none; border-radius: 5px; color: white; font-weight: bold; cursor: pointer; flex: 1;
         }
-        .btn-save { background-color: #e74c3c; } /* 赤：保存 */
-        .btn-gps { background-color: #28a745; flex: 0 0 60px; } /* 緑：現在地 */
+        .btn-save { background-color: #e74c3c; }
+        .btn-gps { background-color: #28a745; flex: 0 0 60px; }
 
-        /* 保存されたピンのポップアップ画像 */
         .popup-img { width: 150px; height: auto; border-radius: 5px; margin-top: 5px; }
         .popup-title { font-weight: bold; font-size: 1.1em; }
         .delete-btn { color: red; cursor: pointer; text-decoration: underline; font-size: 0.9em; margin-top: 5px; display: block;}
@@ -64,51 +61,39 @@
 </div>
 
 <script>
-    // 1. 地図の初期化
     var map = L.map('map').setView([35.681236, 139.767125], 15);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19, attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    var currentLocMarker = null; // 現在地マーカー
-
-    // 2. 起動時に保存されたデータを読み込む
+    var currentLocMarker = null;
     loadPins();
 
-    // --- 機能関数 ---
-
-    // 現在地取得
     function getLocation() {
         if (!navigator.geolocation) return alert("GPS非対応");
-        
         navigator.geolocation.getCurrentPosition(function(pos) {
             var lat = pos.coords.latitude;
             var lng = pos.coords.longitude;
             map.setView([lat, lng], 18);
-            
-            // 現在地だけは青い丸で表示（保存データとは別）
             if (currentLocMarker) map.removeLayer(currentLocMarker);
             currentLocMarker = L.circleMarker([lat, lng], { color: 'white', fillColor: '#28a745', fillOpacity: 1, radius: 8 }).addTo(map);
         }, function() { alert("現在地を取得できませんでした"); });
     }
 
-    // 保存ボタンを押した時の処理
     async function savePin() {
         var title = document.getElementById('input-title').value;
         var fileInput = document.getElementById('input-image');
         
         if (!title) return alert("タイトルを入力してください");
 
-        // ボタンを「保存中...」にして連打防止
         var btn = document.getElementById('save-btn');
         btn.innerText = "保存中...";
         btn.disabled = true;
 
         var center = map.getCenter();
-        var timestamp = new Date().getTime(); // ID代わり
+        var timestamp = new Date().getTime();
         var imageData = null;
 
-        // 画像が選択されている場合、圧縮処理を行う
         if (fileInput.files && fileInput.files[0]) {
             try {
                 imageData = await compressImage(fileInput.files[0]);
@@ -119,22 +104,13 @@
             }
         }
 
-        // データをまとめる
         var pinData = {
-            id: timestamp,
-            lat: center.lat,
-            lng: center.lng,
-            title: title,
-            image: imageData // 圧縮された画像データ(Base64)
+            id: timestamp, lat: center.lat, lng: center.lng, title: title, image: imageData
         };
 
-        // ローカルストレージに保存
         saveToStorage(pinData);
-        
-        // 地図にピンを立てる
         addMarkerToMap(pinData);
 
-        // 入力をクリア
         document.getElementById('input-title').value = "";
         document.getElementById('input-image').value = "";
         alert("保存しました！");
@@ -147,7 +123,6 @@
         btn.disabled = false;
     }
 
-    // ★重要：画像を圧縮する関数（これで固まるのを防ぐ）
     function compressImage(file) {
         return new Promise((resolve, reject) => {
             var reader = new FileReader();
@@ -156,21 +131,14 @@
                 var img = new Image();
                 img.src = event.target.result;
                 img.onload = function() {
-                    // キャンバスを作って描画し直す（ここでサイズを小さくする）
                     var canvas = document.createElement('canvas');
                     var ctx = canvas.getContext('2d');
-                    
-                    // 最大幅を800pxに制限
                     var maxWidth = 800;
                     var scaleSize = maxWidth / img.width;
-                    if (scaleSize > 1) scaleSize = 1; // 元が小さいならそのまま
-
+                    if (scaleSize > 1) scaleSize = 1;
                     canvas.width = img.width * scaleSize;
                     canvas.height = img.height * scaleSize;
-
                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    
-                    // JPEG形式、品質0.7（70%）で圧縮して文字列にする
                     var dataUrl = canvas.toDataURL('image/jpeg', 0.7);
                     resolve(dataUrl);
                 };
@@ -180,12 +148,9 @@
         });
     }
 
-    // ローカルストレージへの保存
     function saveToStorage(data) {
         var pins = JSON.parse(localStorage.getItem('walk_pins') || "[]");
         pins.push(data);
-        
-        // 容量あふれ対策（古い順に消すなどの処理が必要だが、今回はエラー表示のみ）
         try {
             localStorage.setItem('walk_pins', JSON.stringify(pins));
         } catch(e) {
@@ -193,7 +158,6 @@
         }
     }
 
-    // 保存データを読み込んで地図に表示
     function loadPins() {
         var pins = JSON.parse(localStorage.getItem('walk_pins') || "[]");
         pins.forEach(function(pin) {
@@ -201,30 +165,21 @@
         });
     }
 
-    // 地図にマーカーを追加する
     function addMarkerToMap(pin) {
         var popupContent = `<div class="popup-title">${pin.title}</div>`;
         if (pin.image) {
             popupContent += `<img src="${pin.image}" class="popup-img">`;
         }
         popupContent += `<span class="delete-btn" onclick="deletePin(${pin.id})">削除する</span>`;
-
-        var marker = L.marker([pin.lat, pin.lng]).addTo(map)
-            .bindPopup(popupContent);
-        
-        // 削除機能のためにマーカーにIDを紐付けておく
+        var marker = L.marker([pin.lat, pin.lng]).addTo(map).bindPopup(popupContent);
         marker.pinId = pin.id;
     }
 
-    // ピンの削除機能
     window.deletePin = function(id) {
         if(!confirm("この記録を削除しますか？")) return;
-
         var pins = JSON.parse(localStorage.getItem('walk_pins') || "[]");
         var newPins = pins.filter(p => p.id !== id);
         localStorage.setItem('walk_pins', JSON.stringify(newPins));
-        
-        // 画面をリロードして反映
         location.reload();
     }
 </script>
