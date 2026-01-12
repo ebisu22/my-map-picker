@@ -4,138 +4,228 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="球場マップ">
-
-    <title>球場マップ</title>
+    <title>散歩フォトマップ</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <style>
-        /* 全画面表示の設定 */
-        body { 
-            margin: 0; padding: 0; 
-            width: 100%; 
-            display: flex; flex-direction: column; 
-            font-family: sans-serif;
-            
-            /* iPhoneのアドレスバーの伸縮に対応する高さ設定 */
-            height: 100vh;
-            height: 100dvh;
-        }
-
+        body { margin: 0; padding: 0; width: 100%; height: 100dvh; display: flex; flex-direction: column; font-family: sans-serif; }
+        
+        /* 地図エリア */
         #map { flex-grow: 1; width: 100%; position: relative; }
-        
-        /* 画面中央の十字カーソル */
-        .crosshair {
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            width: 20px; height: 20px;
-            pointer-events: none; z-index: 1000;
-        }
-        .crosshair::before, .crosshair::after {
-            content: ''; position: absolute; background: #e74c3c;
-        }
-        .crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; }
-        .crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; }
 
-        /* 下部の操作パネル */
-        .controls {
-            padding: 15px; background: #f8f9fa;
-            text-align: center; box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-            z-index: 2000;
-            display: flex; flex-direction: column; gap: 10px;
-            
-            /* 【重要】iPhone XRなどの下のバー（ホームインジケータ）を避ける設定 */
+        /* 入力フォーム（地図の上に重ねる） */
+        .form-panel {
+            background: #fff; padding: 15px;
             padding-bottom: calc(15px + env(safe-area-inset-bottom));
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            display: flex; flex-direction: column; gap: 10px;
         }
         
-        #coords-display {
-            font-family: monospace; font-size: 1.2em; font-weight: bold; color: #333;
-            margin-bottom: 5px;
+        input[type="text"] {
+            padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 5px;
         }
+        
+        /* 写真選択ボタンをおしゃれに */
+        .file-upload {
+            display: flex; align-items: center; gap: 10px;
+        }
+        input[type="file"] { font-size: 14px; }
+
         .btn-group { display: flex; gap: 10px; }
         button {
-            font-size: 16px; padding: 12px; border-radius: 8px; border: none; cursor: pointer; color: white; flex: 1;
-            font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            padding: 12px; font-size: 16px; border: none; border-radius: 5px; color: white; font-weight: bold; cursor: pointer; flex: 1;
         }
-        .btn-copy { background-color: #007bff; }
-        .btn-gps { background-color: #28a745; flex: 0 0 80px; }
-        button:active { transform: translateY(2px); box-shadow: none; }
+        .btn-save { background-color: #e74c3c; } /* 赤：保存 */
+        .btn-gps { background-color: #28a745; flex: 0 0 60px; } /* 緑：現在地 */
+
+        /* 保存されたピンのポップアップ画像 */
+        .popup-img { width: 150px; height: auto; border-radius: 5px; margin-top: 5px; }
+        .popup-title { font-weight: bold; font-size: 1.1em; }
+        .delete-btn { color: red; cursor: pointer; text-decoration: underline; font-size: 0.9em; margin-top: 5px; display: block;}
     </style>
 </head>
 <body>
 
-<div id="map">
-    <div class="crosshair"></div>
-</div>
+<div id="map"></div>
 
-<div class="controls">
-    <div id="coords-display">読み込み中...</div>
-    <div class="btn-group">
-        <button class="btn-copy" onclick="copyCoords()">📋 座標コピー</button>
-        <button class="btn-gps" onclick="getLocation()">📍現在地</button>
+<div class="form-panel">
+    <div style="display:flex; gap:5px;">
+        <input type="text" id="input-title" placeholder="タイトル (例: きれいな花)" style="flex:1;">
+        <button class="btn-gps" onclick="getLocation()">📍</button>
     </div>
+    
+    <div class="file-upload">
+        <input type="file" id="input-image" accept="image/*">
+    </div>
+
+    <button class="btn-save" id="save-btn" onclick="savePin()">📸 この場所を保存</button>
 </div>
 
 <script>
-    // 1. 地図の初期設定
+    // 1. 地図の初期化
     var map = L.map('map').setView([35.681236, 139.767125], 15);
-
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19, attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    // --- ここから下は基本機能のみ ---
+    var currentLocMarker = null; // 現在地マーカー
 
-    var currentLocMarker = null;
+    // 2. 起動時に保存されたデータを読み込む
+    loadPins();
 
-    map.on('move', function() { updateCoordsDisplay(); });
-    map.on('zoom', function() { updateCoordsDisplay(); });
+    // --- 機能関数 ---
 
-    // 初期表示の更新（これが動けば「読み込み中」が消えます）
-    function updateCoordsDisplay() {
-        var center = map.getCenter();
-        document.getElementById('coords-display').innerText = 
-            center.lat.toFixed(6) + ", " + center.lng.toFixed(6);
+    // 現在地取得
+    function getLocation() {
+        if (!navigator.geolocation) return alert("GPS非対応");
+        
+        navigator.geolocation.getCurrentPosition(function(pos) {
+            var lat = pos.coords.latitude;
+            var lng = pos.coords.longitude;
+            map.setView([lat, lng], 18);
+            
+            // 現在地だけは青い丸で表示（保存データとは別）
+            if (currentLocMarker) map.removeLayer(currentLocMarker);
+            currentLocMarker = L.circleMarker([lat, lng], { color: 'white', fillColor: '#28a745', fillOpacity: 1, radius: 8 }).addTo(map);
+        }, function() { alert("現在地を取得できませんでした"); });
     }
-    updateCoordsDisplay();
 
-    // 座標コピー機能
-    function copyCoords() {
+    // 保存ボタンを押した時の処理
+    async function savePin() {
+        var title = document.getElementById('input-title').value;
+        var fileInput = document.getElementById('input-image');
+        
+        if (!title) return alert("タイトルを入力してください");
+
+        // ボタンを「保存中...」にして連打防止
+        var btn = document.getElementById('save-btn');
+        btn.innerText = "保存中...";
+        btn.disabled = true;
+
         var center = map.getCenter();
-        var text = center.lat.toFixed(6) + "," + center.lng.toFixed(6);
-        navigator.clipboard.writeText(text).then(function() {
-            alert("コピーしました！\n" + text);
-        }, function(err) {
-            prompt("このテキストをコピーしてください", text);
+        var timestamp = new Date().getTime(); // ID代わり
+        var imageData = null;
+
+        // 画像が選択されている場合、圧縮処理を行う
+        if (fileInput.files && fileInput.files[0]) {
+            try {
+                imageData = await compressImage(fileInput.files[0]);
+            } catch (e) {
+                alert("画像の処理に失敗しました: " + e);
+                resetButton();
+                return;
+            }
+        }
+
+        // データをまとめる
+        var pinData = {
+            id: timestamp,
+            lat: center.lat,
+            lng: center.lng,
+            title: title,
+            image: imageData // 圧縮された画像データ(Base64)
+        };
+
+        // ローカルストレージに保存
+        saveToStorage(pinData);
+        
+        // 地図にピンを立てる
+        addMarkerToMap(pinData);
+
+        // 入力をクリア
+        document.getElementById('input-title').value = "";
+        document.getElementById('input-image').value = "";
+        alert("保存しました！");
+        resetButton();
+    }
+
+    function resetButton() {
+        var btn = document.getElementById('save-btn');
+        btn.innerText = "📸 この場所を保存";
+        btn.disabled = false;
+    }
+
+    // ★重要：画像を圧縮する関数（これで固まるのを防ぐ）
+    function compressImage(file) {
+        return new Promise((resolve, reject) => {
+            var reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = function(event) {
+                var img = new Image();
+                img.src = event.target.result;
+                img.onload = function() {
+                    // キャンバスを作って描画し直す（ここでサイズを小さくする）
+                    var canvas = document.createElement('canvas');
+                    var ctx = canvas.getContext('2d');
+                    
+                    // 最大幅を800pxに制限
+                    var maxWidth = 800;
+                    var scaleSize = maxWidth / img.width;
+                    if (scaleSize > 1) scaleSize = 1; // 元が小さいならそのまま
+
+                    canvas.width = img.width * scaleSize;
+                    canvas.height = img.height * scaleSize;
+
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    
+                    // JPEG形式、品質0.7（70%）で圧縮して文字列にする
+                    var dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                    resolve(dataUrl);
+                };
+                img.onerror = reject;
+            };
+            reader.onerror = reject;
         });
     }
 
-    // 現在地へ移動機能
-    function getLocation() {
-        if (!navigator.geolocation) { alert("GPSに対応していません"); return; }
-        var btn = document.querySelector('.btn-gps');
-        var originalText = btn.innerText;
-        btn.innerText = "取得中...";
+    // ローカルストレージへの保存
+    function saveToStorage(data) {
+        var pins = JSON.parse(localStorage.getItem('walk_pins') || "[]");
+        pins.push(data);
+        
+        // 容量あふれ対策（古い順に消すなどの処理が必要だが、今回はエラー表示のみ）
+        try {
+            localStorage.setItem('walk_pins', JSON.stringify(pins));
+        } catch(e) {
+            alert("保存容量がいっぱいです。古いピンを削除してください。");
+        }
+    }
 
-        navigator.geolocation.getCurrentPosition(function(position) {
-            var lat = position.coords.latitude;
-            var lng = position.coords.longitude;
-            map.setView([lat, lng], 18);
-            
-            if (currentLocMarker) { map.removeLayer(currentLocMarker); }
-            currentLocMarker = L.circleMarker([lat, lng], {
-                color: 'white', fillColor: '#007bff', fillOpacity: 0.8, radius: 8, weight: 2
-            }).addTo(map);
+    // 保存データを読み込んで地図に表示
+    function loadPins() {
+        var pins = JSON.parse(localStorage.getItem('walk_pins') || "[]");
+        pins.forEach(function(pin) {
+            addMarkerToMap(pin);
+        });
+    }
 
-            btn.innerText = originalText;
-        }, function(error) {
-            alert("現在地を取得できませんでした");
-            btn.innerText = originalText;
-        }, { enableHighAccuracy: true });
+    // 地図にマーカーを追加する
+    function addMarkerToMap(pin) {
+        var popupContent = `<div class="popup-title">${pin.title}</div>`;
+        if (pin.image) {
+            popupContent += `<img src="${pin.image}" class="popup-img">`;
+        }
+        popupContent += `<span class="delete-btn" onclick="deletePin(${pin.id})">削除する</span>`;
+
+        var marker = L.marker([pin.lat, pin.lng]).addTo(map)
+            .bindPopup(popupContent);
+        
+        // 削除機能のためにマーカーにIDを紐付けておく
+        marker.pinId = pin.id;
+    }
+
+    // ピンの削除機能
+    window.deletePin = function(id) {
+        if(!confirm("この記録を削除しますか？")) return;
+
+        var pins = JSON.parse(localStorage.getItem('walk_pins') || "[]");
+        var newPins = pins.filter(p => p.id !== id);
+        localStorage.setItem('walk_pins', JSON.stringify(newPins));
+        
+        // 画面をリロードして反映
+        location.reload();
     }
 </script>
 
