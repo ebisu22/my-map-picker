@@ -6,4 +6,4 @@ Features: One-click GPS logging, copy coordinates, and export to Google Maps.
 
 Concept: Simple, privacy-first, and run on GitHub Pages.
 
-Author: Yoichi Ebina (Digital Janitor)
+Author: Yoichi Ebina (Digital Janitor) -test-
